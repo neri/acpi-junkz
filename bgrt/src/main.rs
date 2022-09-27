@@ -6,7 +6,7 @@
 extern crate alloc;
 use alloc::{slice, vec::Vec};
 use core::{alloc::Layout, ffi::c_void, fmt::Write, mem::MaybeUninit, panic::PanicInfo};
-use myacpi::*;
+use myacpi::{bgrt::Bgrt, *};
 use uefi::{
     prelude::*,
     proto::console::gop::{BltOp, BltPixel, BltRegion, GraphicsOutput},
@@ -34,10 +34,8 @@ fn alloc_error_handler(layout: Layout) -> ! {
 #[entry]
 fn efi_main(_handle: Handle, mut st: SystemTable<Boot>) -> Status {
     unsafe {
-        uefi::alloc::init(st.boot_services());
-    }
-    unsafe {
         ST.write(&mut st);
+        uefi::alloc::init(st.boot_services());
     }
 
     let rsdptr = st.find_config_table(ACPI2_GUID).unwrap();

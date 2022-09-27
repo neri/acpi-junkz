@@ -1,41 +1,5 @@
 use core::{ffi::c_void, fmt::Display, mem::transmute, str::from_utf8_unchecked};
 
-/// Root System Description Pointer
-#[repr(C, packed)]
-#[allow(unused)]
-pub struct RsdPtr {
-    signature: [u8; 8],
-    checksum: u8,
-    oem_id: [u8; 6],
-    rev: u8,
-    rsdt_addr: u32,
-    len: u32,
-    xsdt_addr: u64,
-    checksum2: u8,
-    _reserved: [u8; 3],
-}
-
-impl RsdPtr {
-    pub const VALID_SIGNATURE: [u8; 8] = *b"RSD PTR ";
-    pub const CURRENT_REV: u8 = 2;
-
-    pub unsafe fn parse(ptr: *const c_void) -> Option<&'static Self> {
-        let p = ptr as *const Self;
-        let p = unsafe { &*p };
-        p.is_valid().then(|| p)
-    }
-
-    #[inline]
-    pub fn is_valid(&self) -> bool {
-        self.signature == Self::VALID_SIGNATURE && self.rev == Self::CURRENT_REV
-    }
-
-    #[inline]
-    pub fn xsdt(&self) -> &Xsdt {
-        unsafe { &*(self.xsdt_addr as usize as *const Xsdt) }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TableId(pub [u8; 4]);
 
@@ -57,6 +21,7 @@ impl TableId {
 }
 
 impl TableId {
+    #[inline]
     pub const fn as_str(&self) -> &str {
         unsafe { from_utf8_unchecked(&self.0) }
     }
@@ -94,26 +59,31 @@ impl AcpiHeader {
         self.len as usize
     }
 
-    fn identify<T: AcpiTable>(&self) -> Option<&T> {
+    #[inline]
+    pub fn assume<T: AcpiTable>(&self) -> Option<&T> {
         (self.signature() == T::TABLE_ID).then(|| unsafe { transmute(self) })
     }
 }
 
-pub unsafe trait AcpiTable {
+pub unsafe trait AcpiTable: Sized {
     const TABLE_ID: TableId;
 
-    fn header(&self) -> &AcpiHeader;
+    #[inline]
+    fn header(&self) -> &AcpiHeader {
+        unsafe { transmute(self) }
+    }
 }
 
 /// Generic Address Structure (GAS)
 #[repr(C, packed)]
 #[allow(unused)]
+#[derive(Debug, Clone, Copy)]
 pub struct Gas {
-    id: GasAddressSpaceId,
-    bit_width: u8,
-    bit_offset: u8,
-    access_size: GasAccessSize,
-    address: u64,
+    pub id: GasAddressSpaceId,
+    pub bit_width: u8,
+    pub bit_offset: u8,
+    pub access_size: GasAccessSize,
+    pub address: u64,
 }
 
 #[repr(u8)]
@@ -150,7 +120,6 @@ pub enum GasAddressSpaceId {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[non_exhaustive]
 pub enum GasAccessSize {
     Undefined = 0,
     Byte,
@@ -168,17 +137,12 @@ pub struct Xsdt {
 
 unsafe impl AcpiTable for Xsdt {
     const TABLE_ID: TableId = TableId::XSDT;
-
-    #[inline]
-    fn header(&self) -> &AcpiHeader {
-        unsafe { transmute(self) }
-    }
 }
 
 impl Xsdt {
     #[inline]
     pub fn tables<'a>(&'a self) -> impl Iterator<Item = &'a AcpiHeader> {
-        XsdtWalker {
+        XsdtTables {
             xsdt: self,
             index: 0,
         }
@@ -186,22 +150,26 @@ impl Xsdt {
 
     #[inline]
     pub fn table_count(&self) -> usize {
-        (self.header().len() - 32) / 8
+        (self.header().len() - 36) / 8
     }
 
+    #[inline]
+    pub fn find<T: AcpiTable>(&self) -> impl Iterator<Item = &T> {
+        self.tables().map(|v| v.assume()).filter_map(|v| v)
+    }
+
+    #[inline]
     pub fn find_first<T: AcpiTable>(&self) -> Option<&T> {
-        self.tables()
-            .find(|v| v.signature() == T::TABLE_ID)
-            .and_then(|v| v.identify())
+        self.find().next()
     }
 }
 
-struct XsdtWalker<'a> {
+struct XsdtTables<'a> {
     xsdt: &'a Xsdt,
     index: usize,
 }
 
-impl<'a> Iterator for XsdtWalker<'a> {
+impl<'a> Iterator for XsdtTables<'a> {
     type Item = &'a AcpiHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -216,38 +184,5 @@ impl<'a> Iterator for XsdtWalker<'a> {
                     .read_unaligned() as usize as *const AcpiHeader)
             })
         }
-    }
-}
-
-/// Boot Graphics Resource Table
-#[repr(C, packed)]
-pub struct Bgrt {
-    _hdr: AcpiHeader,
-    version: u16,
-    status: u8,
-    image_type: u8,
-    image_address: u64,
-    offset_x: u32,
-    offset_y: u32,
-}
-
-unsafe impl AcpiTable for Bgrt {
-    const TABLE_ID: TableId = TableId::BGRT;
-
-    #[inline]
-    fn header(&self) -> &AcpiHeader {
-        unsafe { transmute(self) }
-    }
-}
-
-impl Bgrt {
-    #[inline]
-    pub fn bitmap(&self) -> *const u8 {
-        self.image_address as usize as *const u8
-    }
-
-    #[inline]
-    pub const fn offset(&self) -> (usize, usize) {
-        (self.offset_x as usize, self.offset_y as usize)
     }
 }

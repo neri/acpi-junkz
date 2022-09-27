@@ -1,11 +1,10 @@
 [package]
 edition = "2021"
-name = "acpidump"
+name = "madt"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# myacpi = {path = "../lib/myacpi"}
 myacpi.workspace = true
 uefi.workspace = true

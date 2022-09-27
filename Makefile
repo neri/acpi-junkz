@@ -22,4 +22,4 @@ install: $(TARGET) $(EFI_BOOT)
 	cp target/$(RUST_ARCH)/release/*.efi $(EFI_BOOT)
 
 run: install $(OVMF)
-	qemu-system-x86_64 -bios $(OVMF) -drive format=raw,file=fat:rw:$(MNT) -monitor stdio
+	qemu-system-x86_64 -smp 4 -bios $(OVMF) -drive format=raw,file=fat:rw:$(MNT) -serial mon:stdio

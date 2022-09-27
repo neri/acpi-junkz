@@ -3,4 +3,9 @@ members = [
   "hello",
   "bgrt",
   "acpidump",
+  "madt",
 ]
+
+[workspace.dependencies]
+myacpi = {path = "./lib/myacpi"}
+uefi = {version = "0.17.0", features = ['alloc']}
